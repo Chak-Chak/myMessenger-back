@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace myMessenger_back.Models
 {
-    [Table("users")]
+    [Table("users_info")]
     public class User
     {
         [Key]
