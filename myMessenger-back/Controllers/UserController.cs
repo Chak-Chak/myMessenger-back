@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using AutoWrapper.Wrappers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using myMessenger_back.Dtos;
@@ -6,15 +6,29 @@ using myMessenger_back.Models;
 
 namespace myMessenger_back.Controllers
 {
-    [Route("users_info")]
-    public class UserController: ControllerBase
+    [ApiController]
+    [Route("users")]
+    public class UsersController : ControllerBase
     {
         private ApplicationContext db;
         private IConfiguration _config;
-        public UserController(ApplicationContext context, IConfiguration configuration)
+        public UsersController(ApplicationContext context, IConfiguration configuration)
         {
             db = context;
             _config = configuration;
+        }
+
+        /// <summary>
+        /// Получить данные о всех пользователях
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("all")]
+        public async Task<ApiResponse>
+            GetUsers()
+        {
+            var data = await db.Users.Select(item => item.AsDto())
+                .ToListAsync();
+            return new ApiResponse("", data);
         }
 
         /// <summary>
@@ -22,8 +36,8 @@ namespace myMessenger_back.Controllers
         /// </summary>
         /// /// <param name="userId"></param>
         /// <returns></returns>
-        [HttpGet("{userId}")]
-        [Authorize]
+        [HttpGet("{id}")]
+        //[Authorize]
         public async Task<ActionResult<UserDto>> GetUser(int userId)
         {
             var user = await db.Users.SingleOrDefaultAsync(item => item.Id == userId);
@@ -34,6 +48,5 @@ namespace myMessenger_back.Controllers
 
             return user.AsDto();
         }
-
     }
 }
