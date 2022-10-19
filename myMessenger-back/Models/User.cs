@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace myMessenger_back.Models
 {
-    [Table("users_info")]
+    [Table("users")]
     public class User
     {
         [Key]
@@ -19,5 +19,14 @@ namespace myMessenger_back.Models
         public byte[] PasswordSalt { get; set; }
         [Column("created_on")]
         public DateTime CreatedOn { get; set; }
+        [Column("role")]
+        public string Role { get; set; }
+        [Column("refresh_token")]
+        public string? RefreshToken { get; set; }
+        [Column("refresh_token_created_on")]
+        public DateTime? RefreshTokenCreatedOn { get; set; }
+        [Column("refresh_token_expires_on")]
+        public DateTime? RefreshTokenExpiresOn { get; set; }
+
     }
 }
