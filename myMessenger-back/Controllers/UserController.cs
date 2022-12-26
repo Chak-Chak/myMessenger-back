@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using myMessenger_back.Dtos;
 using myMessenger_back.Models;
 using myMessenger_back.Models.Additional;
+using Newtonsoft.Json.Linq;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -23,6 +24,14 @@ namespace myMessenger_back.Controllers
         {
             db = context;
             _config = configuration;
+        }
+
+        [AllowAnonymous]
+        [HttpGet("ping")]
+        public async Task<ApiResponse>
+            Ping()
+        {
+            return new ApiResponse(message: "pong");
         }
 
         /// <summary>
@@ -196,7 +205,7 @@ namespace myMessenger_back.Controllers
         /// </summary>
         /// /// <param name="id"></param>
         /// <returns></returns>
-        [Authorize(Roles = "admin")]
+        [Authorize]
         [HttpGet("{id}")]
         public async Task<ActionResult<UserDto>> GetUser(int id)
         {
