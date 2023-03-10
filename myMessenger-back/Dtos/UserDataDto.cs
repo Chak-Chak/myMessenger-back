@@ -1,6 +1,6 @@
 ﻿namespace myMessenger_back.Dtos
 {
-    public class UserDto    //todo add last name
+    public class UserDataDto    //todo add last name
     {
         public int Id { get; set; }
         public string Name { get; set; }

@@ -68,7 +68,7 @@ app.UseCors(MyAllowSpecificOrigins);
 
 app.UseApiResponseAndExceptionWrapper(new AutoWrapperOptions { ShowIsErrorFlagForSuccessfulResponse = true });
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 app.UseAuthentication();
 

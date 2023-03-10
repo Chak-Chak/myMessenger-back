@@ -11,6 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
 
 namespace myMessenger_back.Controllers
 {
@@ -43,12 +44,12 @@ namespace myMessenger_back.Controllers
         public async Task<ApiResponse>
             Register(UserRegister dataUserRegister)
         {
-            if (await db.Users.SingleOrDefaultAsync(item => item.Email == dataUserRegister.Email) != null)
+            if (await db.UsersData.SingleOrDefaultAsync(item => item.Email == dataUserRegister.Email) != null)
             {
                 throw new ApiException("Email already exists.");
             }
             CreatePasswordHash(dataUserRegister.Password, out byte[] passwordHash, out byte[] passwordSalt);
-            User user = new User()
+            UserData user = new UserData()
             {
                 Email = dataUserRegister.Email,
                 Name = dataUserRegister.Name,
@@ -57,14 +58,14 @@ namespace myMessenger_back.Controllers
                 CreatedOn = DateTime.UtcNow,
                 Role = "user",
                 RefreshToken = string.Empty,
-                RefreshTokenCreatedOn = DateTime.MinValue,
-                RefreshTokenExpiresOn = DateTime.MinValue,
+                RefreshTokenCreatedOn = DateTime.UtcNow,
+                RefreshTokenExpiresOn = DateTime.UtcNow,
             };
             
-            db.Users.Add(user);             //Добавление записив таблицу users
+            db.UsersData.Add(user);             //Добавление записи в таблицу users_data
             await db.SaveChangesAsync();
-            string token = CreateToken(user);
-            return new ApiResponse(message: "Successful registration.", result: token);
+            //string token = CreateToken(user);
+            return new ApiResponse(message: "Successful registration."/*, result: token*/);
         }
 
         private void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
@@ -84,7 +85,7 @@ namespace myMessenger_back.Controllers
         [HttpPost("login")]
         public async Task<ApiResponse> Login(UserLogin dataUserLogin)
         {
-            var user = await db.Users.SingleOrDefaultAsync(item => item.Email == dataUserLogin.Email);
+            var user = await db.UsersData.SingleOrDefaultAsync(item => item.Email == dataUserLogin.Email);
             if (user == null)
             {
                 throw new ApiException("User not found.");
@@ -93,12 +94,13 @@ namespace myMessenger_back.Controllers
             {
                 throw new ApiException("Invalid password.");
             }
-            string token = CreateToken(user);
+            string token = CreateToken(user);           // access-token
 
-            var refreshToken = GenerateResreshToken();
+            var refreshToken = GenerateResreshToken();  // refresh-token
+
             SetRefreshToken(user, refreshToken);
             await db.SaveChangesAsync();
-            return new ApiResponse(message: "Successful login.", result: token);
+            return new ApiResponse(message: "Successful login.", result: new {token = token, refresh = refreshToken});
         }
 
         private RefreshToken GenerateResreshToken()
@@ -106,20 +108,20 @@ namespace myMessenger_back.Controllers
             var refreshToken = new RefreshToken()
             {
                 Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)),
-                Expires = DateTime.UtcNow.AddDays(7),
+                Expires = DateTime.UtcNow.AddDays(7), // AddDays(7)
                 Created = DateTime.UtcNow
             };
             return refreshToken;
         }
 
-        private void SetRefreshToken(User user, RefreshToken newRefreshToken)
+        private void SetRefreshToken(UserData user, RefreshToken newRefreshToken)
         {
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
                 Expires = newRefreshToken.Expires
             };
-            Response.Cookies.Append("refreshToken", newRefreshToken.Token, cookieOptions); //todo edit for android
+            //Response.Cookies.Append("refreshToken", newRefreshToken.Token, cookieOptions);
 
             user.RefreshToken = newRefreshToken.Token;
             user.RefreshTokenCreatedOn = newRefreshToken.Created;
@@ -135,7 +137,7 @@ namespace myMessenger_back.Controllers
             }
         }
 
-        private string CreateToken(User user)
+        private string CreateToken(UserData user)
         {
             List<Claim> claims = new List<Claim>
             {
@@ -150,7 +152,7 @@ namespace myMessenger_back.Controllers
 
             var token = new JwtSecurityToken(
                 claims: claims,
-                expires: DateTime.UtcNow.AddDays(1),
+                expires: DateTime.UtcNow.AddDays(1), // AddDays(1)
                 signingCredentials: creds);
 
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
@@ -158,14 +160,24 @@ namespace myMessenger_back.Controllers
             return jwt;
         }
 
+        private UserJwt? GetCurrentUserEmailJwt()
+        {
+            if (HttpContext.User.Identity is not ClaimsIdentity identity) return null;
+            var userClaims = identity.Claims;
+            return new UserJwt()
+            {
+                Email = userClaims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value ?? string.Empty
+            };
+        }
+
         [Authorize]
         [HttpPost("refresh-token")]
-        public async Task<ActionResult<string>> RefreshToken()
+        public async Task<ActionResult<string>> RefreshToken(string refreshToken)
         {
             var userJwt = GetCurrentUserEmailJwt();
             if (userJwt == null) throw new ApiException("Invalid token.");
-            var user = await db.Users.SingleOrDefaultAsync(item => item.Email == userJwt.Email);
-            var refreshToken = Request.Cookies["refreshToken"];
+            var user = await db.UsersData.SingleOrDefaultAsync(item => item.Email == userJwt.Email);
+            //var refreshToken = Request.Cookies["refreshToken"];
 
             if (user == null) throw new ApiException("User not found.");
 
@@ -195,7 +207,9 @@ namespace myMessenger_back.Controllers
         public async Task<ApiResponse>
             GetUsers()
         {
-            var data = await db.Users.Select(item => item.AsDto())
+            var data = await db.Users
+                .Include(u => u.UserData)
+                .Select(item => item.UserData.AsDto())
                 .ToListAsync();
             return new ApiResponse("", data);
         }
@@ -207,25 +221,112 @@ namespace myMessenger_back.Controllers
         /// <returns></returns>
         [Authorize]
         [HttpGet("{id}")]
-        public async Task<ActionResult<UserDto>> GetUser(int id)
+        public async Task<ActionResult<UserDataDto>> GetUser(int id)
         {
-            var user = await db.Users.SingleOrDefaultAsync(item => item.Id == id);
+            var user = await db.Users.Include(u => u.UserData).SingleOrDefaultAsync(item => item.UserId == id);
             if (user is null)
             {
                 return NotFound();
             }
 
-            return user.AsDto();
+            return user.UserData.AsDto();
         }
 
-        private UserJwt? GetCurrentUserEmailJwt()
+        [Authorize] //todo request for admin
+        [HttpGet("get_all_conversations")]
+        public async Task<ApiResponse> GetAllConversations()
         {
-            if (HttpContext.User.Identity is not ClaimsIdentity identity) return null;
-            var userClaims = identity.Claims;
-            return new UserJwt()
-            {
-                Email = userClaims.SingleOrDefault(x => x.Type == ClaimTypes.Email)?.Value ?? string.Empty
-            };
+            var conversations = await db.Conversations
+                .Include(creatorUserData => creatorUserData.CreatorUserData)
+                .Include(senderUserData => senderUserData.LastMessageData.SenderUserData)
+                .Include(lastMessageData => lastMessageData.LastMessageData)
+                .Select(item => item.AsDto())
+                .ToListAsync();
+            return new ApiResponse("", conversations);
+        }
+        [Authorize]
+        [HttpGet("get_my_conversations")]
+        public async Task<ApiResponse> GetMyConversations()
+        {
+            var userJwt = GetCurrentUserEmailJwt();
+            if (userJwt == null) throw new ApiException("Invalid token.");
+            var user = await db.UsersData
+                .SingleOrDefaultAsync(item => item.Email == userJwt.Email);
+            if (user == null) throw new ApiException("User not found.");
+
+            var conversations = await db.Conversations
+                .Include(members => members.ConversationMembers)
+                .Where(item => item.ConversationMembers.Any(element => element.UserData.Id == user.Id))
+                .Select(item => new { 
+                    Id = item.Id,
+                    Name = item.Name,
+                    IsDirectMessage = item.IsDirectMessage,
+                    CreatorUserId = item.CreatorUserId,
+                    CreatorUserData = item.CreatorUserData.AsDto(),
+                    LastMessageId = item.LastMessageId,
+                    LastMessageData = item.LastMessageData.AsDto(),
+                    ConversationMembers = item.ConversationMembers.Select(cm => new {
+                        Id = cm.Id,
+                        UserId = cm.UserId,
+                        UserData = cm.UserData.AsDto(),
+                        ConversationId = cm.ConversationId,
+                    }),
+            }).ToListAsync();
+
+            return new ApiResponse("", conversations);
+        }
+        [Authorize] //todo request for admin
+        [HttpGet("get_all_messages")]
+        public async Task<ApiResponse> GetAllMessages()
+        {
+            var messages = await db.ConversationsMessages
+                .Include(conversation => conversation.ConversationData)
+                .Include(message => message.MessageData)
+                    .ThenInclude(senderUserData => senderUserData.SenderUserData)
+                .Select(item => new
+                {
+                    Id = item.Id,
+                    ConversationId = item.ConversationId,
+                    ConversationData = item.ConversationData.AsDto(),
+                    MessageId = item.MessageId,
+                    MessageData = item.MessageData.AsDto(),
+                })
+                .ToListAsync();
+            return new ApiResponse("", messages);
+        }
+        [Authorize]
+        [HttpGet("get_conversation_messages")]
+        public async Task<ApiResponse> GetConversationMessages(int conversationId)
+        {
+            var userJwt = GetCurrentUserEmailJwt();
+            if (userJwt == null) throw new ApiException("Invalid token.");
+            var user = await db.UsersData
+                .SingleOrDefaultAsync(item => item.Email == userJwt.Email);
+            if (user == null) throw new ApiException("User not found.");
+            var conversationMessages = await db.ConversationsMessages
+                .Where(item => item.ConversationId == conversationId)
+                .Include(conversation => conversation.ConversationData)
+                .Include(message => message.MessageData)
+                .Select(item => new {
+                    Id = item.Id,
+                    ConversationId = item.ConversationId,
+                    ConversationData = item.ConversationData.AsDto(),
+                    MessageId = item.MessageId,
+                    MessageData = item.MessageData.AsDto(),
+                })
+                .ToListAsync();
+            conversationMessages = conversationMessages.OrderBy(s => s.MessageData.SendingDate).ToList();
+            var conversationMembers = await db.ConversationMembers
+                .Where(item => item.ConversationId == conversationId)
+                .Include(user => user.UserData)
+                .Select(item => new
+                {
+                    Id = item.Id,
+                    UserId = item.UserId,
+                    UserData = item.UserData.AsDto(),
+                })
+                .ToListAsync();
+            return new ApiResponse("", new { conversationMessages, conversationMembers });
         }
     }
 }
