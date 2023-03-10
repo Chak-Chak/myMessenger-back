@@ -273,6 +273,8 @@ namespace myMessenger_back.Controllers
                     }),
             }).ToListAsync();
 
+            conversations = conversations.OrderByDescending(item => item.LastMessageData.SendingDate).ToList();
+
             return new ApiResponse("", conversations);
         }
         [Authorize] //todo request for admin
