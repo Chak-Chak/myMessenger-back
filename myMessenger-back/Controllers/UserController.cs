@@ -61,7 +61,7 @@ namespace myMessenger_back.Controllers
                 RefreshTokenCreatedOn = DateTime.UtcNow,
                 RefreshTokenExpiresOn = DateTime.UtcNow,
             };
-            
+
             db.UsersData.Add(user);             //Добавление записи в таблицу users_data
             await db.SaveChangesAsync();
             //string token = CreateToken(user);
@@ -100,7 +100,7 @@ namespace myMessenger_back.Controllers
 
             SetRefreshToken(user, refreshToken);
             await db.SaveChangesAsync();
-            return new ApiResponse(message: "Successful login.", result: new {token = token, refresh = refreshToken});
+            return new ApiResponse(message: "Successful login.", result: new { token = token, refresh = refreshToken });
         }
 
         private RefreshToken GenerateResreshToken()
@@ -184,7 +184,7 @@ namespace myMessenger_back.Controllers
             if (!user.RefreshToken.Equals(refreshToken))
             {
                 return Unauthorized("Invalid refresh token");
-            } 
+            }
             else if (user.RefreshTokenExpiresOn < DateTime.UtcNow)
             {
                 return Unauthorized("Token expired");
@@ -244,6 +244,20 @@ namespace myMessenger_back.Controllers
                 .ToListAsync();
             return new ApiResponse("", conversations);
         }
+
+        [Authorize]
+        [HttpGet("get_my_info")]
+        public async Task<ApiResponse> GetMyInfo()
+        {
+            var userJwt = GetCurrentUserEmailJwt();
+            if (userJwt == null) throw new ApiException("Invalid token.");
+            var user = await db.UsersData
+                .SingleOrDefaultAsync(item => item.Email == userJwt.Email);
+            if (user == null) throw new ApiException("User not found.");
+
+            return new ApiResponse("", user.AsDto());
+        }
+
         [Authorize]
         [HttpGet("get_my_conversations")]
         public async Task<ApiResponse> GetMyConversations()
@@ -257,7 +271,8 @@ namespace myMessenger_back.Controllers
             var conversations = await db.Conversations
                 .Include(members => members.ConversationMembers)
                 .Where(item => item.ConversationMembers.Any(element => element.UserData.Id == user.Id))
-                .Select(item => new { 
+                .Select(item => new
+                {
                     Id = item.Id,
                     Name = item.Name,
                     IsDirectMessage = item.IsDirectMessage,
@@ -265,18 +280,20 @@ namespace myMessenger_back.Controllers
                     CreatorUserData = item.CreatorUserData.AsDto(),
                     LastMessageId = item.LastMessageId,
                     LastMessageData = item.LastMessageData.AsDto(),
-                    ConversationMembers = item.ConversationMembers.Select(cm => new {
+                    ConversationMembers = item.ConversationMembers.Select(cm => new
+                    {
                         Id = cm.Id,
                         UserId = cm.UserId,
                         UserData = cm.UserData.AsDto(),
                         ConversationId = cm.ConversationId,
                     }),
-            }).ToListAsync();
+                }).ToListAsync();
 
             conversations = conversations.OrderByDescending(item => item.LastMessageData.SendingDate).ToList();
 
             return new ApiResponse("", conversations);
         }
+
         [Authorize] //todo request for admin
         [HttpGet("get_all_messages")]
         public async Task<ApiResponse> GetAllMessages()
@@ -309,7 +326,8 @@ namespace myMessenger_back.Controllers
                 .Where(item => item.ConversationId == conversationId)
                 .Include(conversation => conversation.ConversationData)
                 .Include(message => message.MessageData)
-                .Select(item => new {
+                .Select(item => new
+                {
                     Id = item.Id,
                     ConversationId = item.ConversationId,
                     ConversationData = item.ConversationData.AsDto(),
@@ -329,6 +347,47 @@ namespace myMessenger_back.Controllers
                 })
                 .ToListAsync();
             return new ApiResponse("", new { conversationMessages, conversationMembers });
+        }
+
+        [Authorize]
+        [HttpPost("send_message")]
+        public async Task<ActionResult<string>> SendMessage(UserSendMessage dataUserSendMessage)
+        {
+            var userJwt = GetCurrentUserEmailJwt();
+            if (userJwt == null) throw new ApiException("Invalid token.");
+            var user = await db.UsersData
+                .SingleOrDefaultAsync(item => item.Email == userJwt.Email);
+            if (user == null) throw new ApiException("User not found.");
+
+            var conversation = db.Conversations.Where(item => item.Id == dataUserSendMessage.ConversationId).FirstOrDefault();  //Получение данных о беседе, в которой необходимо обновить данные
+            if (conversation == null) throw new ApiException("Conversation not found.");
+
+            var convMemb = db.ConversationMembers.Where(item => item.UserId == user.Id && item.ConversationId == dataUserSendMessage.ConversationId).FirstOrDefault();
+            if (convMemb == null) throw new ApiException("Data error");
+            
+            Message message = new Message()
+            {
+                SenderId = user.Id,
+                MessageText = dataUserSendMessage.MessageText,
+                SendingDate = DateTime.UtcNow,
+            };
+
+            db.Messages.Add(message);   //Добавление записи в таблицу messages
+            await db.SaveChangesAsync();
+
+            ConversationsMessages conversationsMessages = new ConversationsMessages()
+            {
+                ConversationId = dataUserSendMessage.ConversationId,
+                MessageId = message.Id,
+            };
+
+            db.ConversationsMessages.Add(conversationsMessages);    //Добавление записи в таблицу conversationsMessages
+            await db.SaveChangesAsync();
+
+            conversation.LastMessageId = message.Id;
+            await db.SaveChangesAsync();
+
+            return Ok();
         }
     }
 }
