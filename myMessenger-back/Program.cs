@@ -16,7 +16,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy(name: MyAllowSpecificOrigins,
                       builder =>
                       {
-                          builder.WithOrigins("http://localhost:19006"/*"exp://192.168.0.35:19000"*/
+                          builder.WithOrigins("http://localhost:19006"
                                , "http://10.0.2.2:8081"
                                , "http://192.168.0.35:8000"
                                )
@@ -75,5 +75,17 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+var webSocketOptions = new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromMinutes(2)
+};
+
+/*webSocketOptions.AllowedOrigins.Add("http://10.0.2.2:5554");
+webSocketOptions.AllowedOrigins.Add("http://10.0.2.2:8081");
+webSocketOptions.AllowedOrigins.Add("http://192.168.0.35:8000");
+webSocketOptions.AllowedOrigins.Add("http://localhost:19006");*/
+
+app.UseWebSockets(webSocketOptions);
 
 app.Run();

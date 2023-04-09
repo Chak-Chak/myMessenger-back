@@ -384,7 +384,7 @@ namespace myMessenger_back.Controllers
             db.ConversationsMessages.Add(conversationsMessages);    //Добавление записи в таблицу conversationsMessages
             await db.SaveChangesAsync();
 
-            conversation.LastMessageId = message.Id;
+            conversation.LastMessageId = message.Id;    //Обновление данных беседы
             await db.SaveChangesAsync();
 
             return Ok();
